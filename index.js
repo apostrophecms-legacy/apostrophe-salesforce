@@ -54,7 +54,7 @@ function Construct(options, callback) {
           });
         }
         // Should add some configurable criteria, e.g. custom flag that allows records to be imported by Apostrophe
-        var queryString = encodeURI("SELECT Id, " + queryFields.join(', ') + " FROM " + mapping.sfObj + " WHERE Id='006C000000eKRT4' LIMIT 100");
+        var queryString = encodeURI("SELECT Id, " + queryFields.join(', ') + " FROM " + mapping.sfObj + " LIMIT 100");
 
         // This call gets the data
         request.get(instance_url + '/services/data/v26.0/query/?q=' + queryString, {'auth': {'bearer': access_token}}, function(err, resp, body) {

@@ -4,8 +4,6 @@ Still in the oven
 Example Apostrophe config block.
 
     'apostrophe-salesforce': {
-      sfClientId: "SalesforceClientId",
-      sfSecret: "SalesforceClientSecret",
       sfUsername: "SalesforceUsername",
       sfPassword: "SalesforcePassword",
       mappings: [

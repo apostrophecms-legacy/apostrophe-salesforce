@@ -2,9 +2,9 @@ var request = require('request'),
     jsforce = require('jsforce')
     flatten = require('flat');
 
-module.exports = factory;
+module.exports = salesforce;
 
-function factory(options, callback) {
+function salesforce(options, callback) {
   return new Construct(options, callback);
 }
 
@@ -17,6 +17,8 @@ function Construct(options, callback) {
 
   // The configuration of how Salesforce data maps into Apostrophe
   self.mappings = options.mappings;
+
+  self._apos.mixinModuleAssets(self, 'salesforce', __dirname, options);
 
   // Salesforce authentication stuffs
   self.sfUsername = options.sfUsername;
@@ -31,7 +33,7 @@ function Construct(options, callback) {
         // Get the relevant Apostrophe object for the mapping
         var Type = self._site.modules[mapping.aposObj];
 
-        // Create a SOQL Query
+        // Build SOQL Query
         var queryFields = [];
         for(aposField in mapping.fields) {
           sfFields = mapping.fields[aposField];
@@ -43,7 +45,7 @@ function Construct(options, callback) {
         // Should add some configurable criteria, e.g. custom flag that allows records to be imported by Apostrophe
         var queryString = "SELECT Id, " + queryFields.join(', ') + " FROM " + mapping.sfObj + " LIMIT 100";
 
-        // This call gets the data
+        // Execute query
         conn.query(queryString, function(err, result) {
           result.records.forEach(function(sfObj) {
             // To deal with addressing nested elements
@@ -71,6 +73,7 @@ function Construct(options, callback) {
                 aposObj[aposField] = sfFieldValues.join(' ');
               }
             }
+
             // Save the Apostrophe object
             Type.putOne(req, {}, aposObj, function(err) {
               if(err){
@@ -83,8 +86,12 @@ function Construct(options, callback) {
       });
     });
 
-    
-    res.send('done');
+    res.redirect('/');
+  });
+
+  self._apos.addLocal('aposSalesforceMenu', function(args) {
+    var result = self.render('menu', args);
+    return result;
   });
 
   // Invoke the callback. This must happen on next tick or later!
@@ -96,4 +103,4 @@ function Construct(options, callback) {
 }
 
 // Export the constructor so others can subclass
-factory.Construct = Construct;
+salesforce.Construct = Construct;

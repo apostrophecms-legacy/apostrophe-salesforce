@@ -24,7 +24,7 @@ function Construct(options, callback) {
   self.sfUsername = options.sfUsername;
   self.sfPassword = options.sfPassword;
 
-  self._app.get("/salesforce/refresh", function(req, res) {
+  self._app.get("/salesforce/sync", function(req, res) {
 
     var conn = new jsforce.Connection({});
 
@@ -35,15 +35,26 @@ function Construct(options, callback) {
 
         // Build SOQL Query
         var queryFields = [];
+        var whereClauses = [];
         for(aposField in mapping.fields) {
           sfFields = mapping.fields[aposField];
           if(!(sfFields instanceof Array)) {
             sfFields = [sfFields];
           }
           queryFields.push.apply(queryFields, sfFields);
+
+          // Add required field stipulations
+          if(mapping.required.indexOf(aposField) >= 0) {
+            sfFields.forEach(function(sfField) {
+              whereClauses.push(" " + sfField + " != null")
+            });
+          }
         }
         // Should add some configurable criteria, e.g. custom flag that allows records to be imported by Apostrophe
-        var queryString = "SELECT Id, " + queryFields.join(', ') + " FROM " + mapping.sfObj + " LIMIT 100";
+        var queryString = "SELECT Id, " + queryFields.join(', ') + 
+                          " FROM " + mapping.sfObj + 
+                          ((whereClauses.length > 0) ? " WHERE" + whereClauses.join(" AND") : "")
+                          + " LIMIT 100";
 
         // Execute query
         conn.query(queryString, function(err, result) {

@@ -1,4 +1,6 @@
-var request = require('request');
+var request = require('request'),
+    jsforce = require('jsforce')
+    flatten = require('flat');
 
 module.exports = factory;
 
@@ -17,30 +19,17 @@ function Construct(options, callback) {
   self.mappings = options.mappings;
 
   // Salesforce authentication stuffs
-  self.sfClientId = options.sfClientId;
-  self.sfSecret = options.sfSecret;
   self.sfUsername = options.sfUsername;
   self.sfPassword = options.sfPassword;
 
   self._app.get("/salesforce/refresh", function(req, res) {
 
-    self.mappings.forEach(function(mapping) {
-      // Get the relevant Apostrophe object for the mapping
-      var Type = self._site.modules[mapping.aposObj];
+    var conn = new jsforce.Connection({});
 
-      var auth = {
-        grant_type: "password",
-        client_id: self.sfClientId,
-        client_secret: self.sfSecret,
-        username: self.sfUsername,
-        password: self.sfPassword
-      }
-
-      // First call gets a token
-      request.post({url: 'https://login.salesforce.com/services/oauth2/token', form: auth}, function(err, resp, body) {
-        var parsedBody = JSON.parse(body);
-        var access_token = parsedBody.access_token;
-        var instance_url = parsedBody.instance_url;
+    conn.login(self.sfUsername, self.sfPassword, function(err, userInfo) {
+      self.mappings.forEach(function(mapping) {
+        // Get the relevant Apostrophe object for the mapping
+        var Type = self._site.modules[mapping.aposObj];
 
         // Create a SOQL Query
         var queryFields = [];
@@ -49,17 +38,17 @@ function Construct(options, callback) {
           if(!(sfFields instanceof Array)) {
             sfFields = [sfFields];
           }
-          sfFields.forEach(function(sfField) {
-            queryFields.push(sfField);
-          });
+          queryFields.push.apply(queryFields, sfFields);
         }
         // Should add some configurable criteria, e.g. custom flag that allows records to be imported by Apostrophe
-        var queryString = encodeURI("SELECT Id, " + queryFields.join(', ') + " FROM " + mapping.sfObj + " LIMIT 100");
+        var queryString = "SELECT Id, " + queryFields.join(', ') + " FROM " + mapping.sfObj + " LIMIT 100";
 
         // This call gets the data
-        request.get(instance_url + '/services/data/v26.0/query/?q=' + queryString, {'auth': {'bearer': access_token}}, function(err, resp, body) {
-          var parsedBody = JSON.parse(body);
-          parsedBody.records.forEach(function(sfObj) {
+        conn.query(queryString, function(err, result) {
+          result.records.forEach(function(sfObj) {
+            // To deal with addressing nested elements
+            sfObj = flatten(sfObj);
+
             // Create new instance of object and associate with Salesforce id
             var aposObj = Type.newInstance();
             aposObj.sfId = sfObj.Id;
@@ -72,15 +61,7 @@ function Construct(options, callback) {
               }
               var sfFieldValues = [];
               sfFields.forEach(function(sfField) {
-                // To account for nested objects
-                var sfValue = sfObj;
-                sfField.split('.').forEach(function(subField) {
-                  if(typeof sfValue !== 'undefined' && sfValue !== null) {
-                    sfValue = sfValue[subField];
-                  } else {
-                    sfValue = null;
-                  }
-                });
+                var sfValue = sfObj[sfField];
                 if(typeof sfValue !== 'undefined' && sfValue !== null) {
                   sfFieldValues.push(sfValue);
                 }
@@ -101,6 +82,8 @@ function Construct(options, callback) {
         });
       });
     });
+
+    
     res.send('done');
   });
 

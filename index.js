@@ -1,6 +1,7 @@
 var request = require('request'),
-    jsforce = require('jsforce')
-    flatten = require('flat');
+    _ = require('lodash'),
+    flatten = require('flat'),
+    jsforce = require('jsforce');
 
 module.exports = salesforce;
 
@@ -44,7 +45,7 @@ function Construct(options, callback) {
           queryFields.push.apply(queryFields, sfFields);
 
           // Add required field stipulations
-          if(mapping.required.indexOf(aposField) >= 0) {
+          if(mapping.required && mapping.required.indexOf(aposField) >= 0) {
             sfFields.forEach(function(sfField) {
               whereClauses.push(" " + sfField + " != null")
             });
@@ -58,9 +59,11 @@ function Construct(options, callback) {
 
         // Execute query
         conn.query(queryString, function(err, result) {
+          console.log(err);
           result.records.forEach(function(sfObj) {
             // To deal with addressing nested elements
-            sfObj = flatten(sfObj);
+            sfObj = flatten(sfObj, {safe: true});
+            console.log(JSON.stringify(sfObj));
 
             // Create new instance of object and associate with Salesforce id
             var aposObj = Type.newInstance();
@@ -85,12 +88,24 @@ function Construct(options, callback) {
               }
             }
 
-            // Save the Apostrophe object
-            Type.putOne(req, {}, aposObj, function(err) {
-              if(err){
+            // De-duping step
+            Type.getOne(req, {sfId: aposObj.sfId}, {}, function(err, item) {
+              if(err) {
                 console.error(err);
               }
-              // saved from salesforce successfully!
+              if(!item) {
+                // Save the Apostrophe object
+                Type.putOne(req, {}, aposObj, function(err) {
+                  if(err){
+                    console.error(err);
+                  }
+                  // saved from salesforce successfully!
+                });
+              }
+              // else {
+              //   _.extend(item, aposObj);
+              //   Type.save(item);
+              // }
             });
           });
         });

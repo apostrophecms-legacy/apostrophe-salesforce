@@ -1,5 +1,4 @@
-var request = require('request'),
-    _ = require('lodash'),
+var _ = require('lodash'),
     flatten = require('flat'),
     jsforce = require('jsforce');
 
@@ -30,6 +29,7 @@ function Construct(options, callback) {
     var conn = new jsforce.Connection({});
 
     conn.login(self.sfUsername, self.sfPassword, function(err, userInfo) {
+      if(err) console.log(err);
       self.mappings.forEach(function(mapping) {
         // Get the relevant Apostrophe object for the mapping
         var Type = self._site.modules[mapping.aposObj];
@@ -47,23 +47,30 @@ function Construct(options, callback) {
           // Add required field stipulations
           if(mapping.required && mapping.required.indexOf(aposField) >= 0) {
             sfFields.forEach(function(sfField) {
-              whereClauses.push(" " + sfField + " != null")
+              whereClauses.push(sfField + " != null")
             });
           }
+        }
+        if(mapping.where) {
+          mapping.where.forEach(function(whereClause) {
+            whereClauses.push(whereClause);
+          });
         }
         // Should add some configurable criteria, e.g. custom flag that allows records to be imported by Apostrophe
         var queryString = "SELECT Id, " + queryFields.join(', ') + 
                           " FROM " + mapping.sfObj + 
-                          ((whereClauses.length > 0) ? " WHERE" + whereClauses.join(" AND") : "")
+                          ((whereClauses.length > 0) ? " WHERE " + whereClauses.join(" AND ") : "")
                           + " LIMIT 100";
+        console.log(queryString);
 
         // Execute query
         conn.query(queryString, function(err, result) {
-          console.log(err);
+          if (err) {
+            console.log(err);
+          }
           result.records.forEach(function(sfObj) {
             // To deal with addressing nested elements
             sfObj = flatten(sfObj, {safe: true});
-            console.log(JSON.stringify(sfObj));
 
             // Create new instance of object and associate with Salesforce id
             var aposObj = Type.newInstance();
@@ -94,18 +101,17 @@ function Construct(options, callback) {
                 console.error(err);
               }
               if(!item) {
-                // Save the Apostrophe object
-                Type.putOne(req, {}, aposObj, function(err) {
-                  if(err){
-                    console.error(err);
-                  }
-                  // saved from salesforce successfully!
-                });
+                item = aposObj;
+              } else {
+                _.extend(item, aposObj);
               }
-              // else {
-              //   _.extend(item, aposObj);
-              //   Type.save(item);
-              // }
+              // Save the Apostrophe object
+              Type.putOne(req, {}, aposObj, function(err) {
+                if(err) {
+                  console.error(err);
+                }
+                // saved from salesforce successfully!
+              });
             });
           });
         });

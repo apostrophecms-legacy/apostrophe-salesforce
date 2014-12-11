@@ -1,6 +1,6 @@
 {
   "name": "apostrophe-salesforce",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "",
   "main": "index.js",
   "scripts": {
@@ -15,7 +15,6 @@
   "dependencies": {
     "flat": "^1.3.0",
     "jsforce": "^1.3.1",
-    "lodash": "^2.4.1",
-    "request": "^2.49.0"
+    "lodash": "^2.4.1"
   }
 }

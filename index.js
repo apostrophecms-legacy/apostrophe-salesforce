@@ -60,14 +60,12 @@ function Construct(options, callback) {
         var queryString = "SELECT Id, " + queryFields.join(', ') + 
                           " FROM " + mapping.sfObj + 
                           ((whereClauses.length > 0) ? " WHERE " + whereClauses.join(" AND ") : "")
-                          + " LIMIT 100";
-        console.log(queryString);
+                          + " LIMIT 1000";
+        //console.log(queryString);
 
         // Execute query
         conn.query(queryString, function(err, result) {
-          if (err) {
-            console.log(err);
-          }
+          if (err) console.log(err);
           result.records.forEach(function(sfObj) {
             // To deal with addressing nested elements
             sfObj = flatten(sfObj, {safe: true});
@@ -106,7 +104,7 @@ function Construct(options, callback) {
                 _.extend(item, aposObj);
               }
               // Save the Apostrophe object
-              Type.putOne(req, {}, aposObj, function(err) {
+              Type.putOne(req, {}, item, function(err) {
                 if(err) {
                   console.error(err);
                 }

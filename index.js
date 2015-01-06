@@ -1,6 +1,7 @@
 var _       = require('lodash'),
     async   = require('async'),
     flatten = require('flat'),
+    moment  = require('moment'),
     jsforce = require('jsforce');
 
 module.exports = salesforce;
@@ -25,10 +26,25 @@ function Construct (options, callback) {
   // Salesforce authentication stuffs
   self.sfUsername = options.sfUsername;
   self.sfPassword = options.sfPassword;
+  
+  self._apos.db.collection('aposSalesforceStash', function (err, collection) {
+    collection.findOne({}, {sort: [['$natural','desc']]}, function(err, doc) {
+      if (!doc) return
+      self.lastRun = doc.lastRun;
+    });
+  });
 
   self._app.get("/apos/salesforce/sync", function(req, res) {
+    var startTime = moment().format();
+
     getConnection(function(err) {
       if (err) return console.log(err);
+
+      // connection.sobject("Contact").describe(function(err, res) {
+      //   console.log(res);
+      // })
+      // return
+
       var queries = {};
 
       var executeTasks = [],
@@ -39,7 +55,7 @@ function Construct (options, callback) {
       self.mappings.forEach(function(mapping) {
         mapping.Type = self._site.modules[mapping.aposObj];
         mapping.req = req; // getOne and putOne requires req object
-        queries[mapping] = new Query(mapping);
+        queries[mapping] = new Query(mapping, self.lastRun);
         executeTasks.push(queries[mapping].execute);
         mapTasks.push(queries[mapping].map);
         saveTasks.push(queries[mapping].save);
@@ -68,7 +84,12 @@ function Construct (options, callback) {
           }
         }, 
         function() {
-          console.log("done syncing");
+          self.lastRun = startTime;
+          self._apos.db.collection('aposSalesforceStash', function (err, collection) {
+            collection.insert({lastRun: self.lastRun, finished: new Date()}, function(err, result) {
+              console.log("done syncing");
+            });
+          });
         }
       );
     })
@@ -87,15 +108,21 @@ function Construct (options, callback) {
     }
   }
 
-  var Query = function (mapping) {
+  var Query = function (mapping, lastRun) {
     var self = this;
 
     var Type = mapping.Type;
     var req = mapping.req;
 
+    var MAX_RESULTS = 10000;
+
     // Construct the SOQL Query
     var queryFields = [];
     var whereClauses = [];
+    // Add delta logic
+    if(lastRun) {
+      whereClauses.push("LastModifiedDate > " + lastRun);
+    }
     // Add fields to SELECT
     for(aposField in mapping.fields) {
       var sfFields = mapping.fields[aposField];
@@ -112,8 +139,8 @@ function Construct (options, callback) {
     }
     // Add nested queries for JOINs
     for(aposJoin in mapping.joins) {
-      var sfJoin = mapping.joins[aposJoin].sfType;
-      queryFields.push('(SELECT Entity.Id FROM ' + sfJoin + ' AS Entity)');
+      var join = mapping.joins[aposJoin];
+      queryFields.push('(SELECT Entity' + (join.sfSubType ? '.' + join.sfSubType : '') + '.Id FROM ' + join.sfType + ' AS Entity)');
     }
     // Add custom WHERE clauses
     if (mapping.where) {
@@ -122,23 +149,26 @@ function Construct (options, callback) {
     // Create query string
     self.queryString = "SELECT Id, " + queryFields.join(', ') + 
                       " FROM " + mapping.sfObj + 
-                      ((whereClauses.length > 0) ? " WHERE " + whereClauses.join(" AND ") : "") +
-                      " LIMIT 5000";
+                      ((whereClauses.length > 0) ? " WHERE " + whereClauses.join(" AND ") : "") + 
+                      " LIMIT " + MAX_RESULTS;
 
     self.sfResults = [];
     self.aposResults = [];
 
     // Executes the constructed query
     self.execute = function(callback) {
-      connection.query(self.queryString, function(err, result) {
-        if (err) return callback(err);
-        result.records.forEach(function(sfObj) {
-          // To deal with accessing nested elements
+      connection.query(self.queryString)
+        .on("record", function(sfObj) {
           sfObj = flatten(sfObj, {safe: true});
           self.sfResults.push(sfObj);
-        });
-        callback();
-      });
+        })
+        .on("end", function(query) {
+          callback();
+        })
+        .on("error", function(err) {
+          callback(err);
+        })
+        .run({autoFetch: true, maxFetch: MAX_RESULTS});
     }
 
     // Maps the salesforce results to apostrophe objects
@@ -174,19 +204,18 @@ function Construct (options, callback) {
     self.save = function(callback) {
       // De-duping step
       async.each(self.aposResults, 
-        function(aposObj, innerCallback) {
+        function(aposObj, callback) {
           Type.getOne(req, {sfId: aposObj.sfId}, {}, function(err, item) {
-            if(err) return innerCallback(err);
+            if(err) return callback(err);
             if(!item) {
               item = aposObj;
             } else {
-              console.log(aposObj.sfId + " -+- " + item.title);
               _.extend(item, aposObj);
             }
+            //console.log(item.sfId + " -+- " + item.title);
             // Save the Apostrophe object
             Type.putOne(req, {}, item, function(err) {
-              if(err) return innerCallback(err);
-              innerCallback();
+              callback(err);
             });
           });
         }, function(err) {
@@ -197,20 +226,45 @@ function Construct (options, callback) {
 
     // Creates joins in the saved apostrophe objects
     self.join = function(callback) {
-      self.sfResults.forEach(function(sfObj) {
-        for(aposJoin in mapping.joins) {
-          var join = mapping.joins[aposJoin];
-          var joinResults = sfObj[join.sfType + '.records'];
-          console.log(joinResults);
-          for(i in joinResults) {
-            options.site.modules[join.aposType].getOne(req, {sfId: joinResults[i].Id}, {}, function(err, item) {
-              if(err) console.log(err);
-              //if(joinResults[i]) console.log(joinResults[i].Id + "---" + (item ? item.title : "none"));
-            });
-          }
+      if (!mapping.joins || mapping.joins.length <= 0) {
+        return callback();
+      }
+      async.each(self.sfResults,
+        function(sfObj, callback) {
+          Type.getOne(req, {sfId: sfObj.Id}, {}, function(err, aposObj) {
+            if(!aposObj) return callback();
+            if(!aposObj[aposJoin]) {
+              aposObj[aposJoin] = [];
+            }
+            for(aposJoin in mapping.joins) {
+              var join = mapping.joins[aposJoin];
+              var joinResults = sfObj[join.sfType + '.records'];
+
+              if (!joinResults) return callback(err);
+                async.each(joinResults, 
+                  function(joinResult, callback) {
+                  options.site.modules[join.aposType].getOne(req, {sfId: joinResult[join.sfSubType].Id}, {}, function(err, item) {
+                    if(!item) return callback(err);
+                    //console.log(sfObj.Name + "---" + (item ? item.title + " " + item._id : "none"));
+                    if (!_.contains(aposObj[aposJoin], item._id)) {
+                      aposObj[aposJoin].push(item._id);
+                    }
+                    return callback(err);
+                  });
+                },
+                function(err) {
+                  //console.log(aposObj);
+                  Type.putOne(req, {}, aposObj, function(err) {
+                    return callback(err);
+                  });
+                }
+              );
+            }
+          });
+        }, function(err) {
+          return callback(err);
         }
-      });
-      callback();
+      );
     }
   }
 
@@ -220,13 +274,17 @@ function Construct (options, callback) {
     var result = self.render('menu', args);
     return result;
   });
-
-  // Invoke the callback. This must happen on next tick or later!
-  if (callback) {
-    return process.nextTick(function() {
-      return callback(null);
-    });
-  }
+  
+  // Ensure index on Salesforce id in Apostrophe
+  self._apos.pages.ensureIndex({ sfId: 1 }, { safe: true }, function() {
+    // Invoke the callback. This must happen on next tick or later!
+    if (callback) {
+      return process.nextTick(function() {
+        return callback(null);
+      });
+    }
+  });
+  
 }
 
 // Export the constructor so others can subclass

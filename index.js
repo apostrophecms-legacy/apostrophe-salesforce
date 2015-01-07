@@ -27,7 +27,7 @@ function Construct (options, callback) {
   self.sfUsername = options.sfUsername;
   self.sfPassword = options.sfPassword;
   
-  self._apos.db.collection('aposSalesforceStash', function (err, collection) {
+  self._apos.db.collection('aposSalesforce', function (err, collection) {
     collection.findOne({}, {sort: [['$natural','desc']]}, function(err, doc) {
       if (!doc) return
       self.lastRun = doc.lastRun;
@@ -52,17 +52,13 @@ function Construct (options, callback) {
       // })
       // return
 
-      var queries = {};
+      var queries = [];
 
-      var executeTasks = [],
-          mapTasks = [],
-          saveTasks = [],
-          joinTasks = [];
       // Create each query object
       self.mappings.forEach(function(mapping) {
         mapping.Type = self._site.modules[mapping.aposObj];
         mapping.req = req; // getOne and putOne requires req object
-        queries[mapping] = new Query(mapping, self.lastRun);
+        queries.push(new Query(mapping, self.lastRun));
       });
       async.series({
           execute: function (callback) {
@@ -88,7 +84,8 @@ function Construct (options, callback) {
         }, 
         function() {
           self.lastRun = startTime;
-          self._apos.db.collection('aposSalesforceStash', function (err, collection) {
+          console.log("Finished sync, logging last run");
+          self._apos.db.collection('aposSalesforce', function (err, collection) {
             collection.insert({lastRun: self.lastRun, finished: new Date()}, function(err, result) {
               return callback();
             });
@@ -158,6 +155,7 @@ function Construct (options, callback) {
 
     // Executes the constructed query
     self.execute = function(callback) {
+      console.log("execute---" + self.queryString);
       connection.query(self.queryString)
         .on("record", function(sfObj) {
           sfObj = flatten(sfObj, {safe: true});
@@ -216,6 +214,7 @@ function Construct (options, callback) {
             //console.log(item.sfId + " -+- " + item.title);
             // Save the Apostrophe object
             Type.putOne(req, {}, item, function(err) {
+              if (err) console.log(err);
               callback(err);
             });
           });

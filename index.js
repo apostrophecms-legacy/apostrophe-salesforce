@@ -35,6 +35,13 @@ function Construct (options, callback) {
   });
 
   self._app.get("/apos/salesforce/sync", function(req, res) {
+    self.sync(req, function() {
+      console.log("done syncing");
+    });
+    res.redirect('/');
+  });
+
+  self.sync = function(req, callback) {
     var startTime = moment().format();
 
     getConnection(function(err) {
@@ -56,29 +63,25 @@ function Construct (options, callback) {
         mapping.Type = self._site.modules[mapping.aposObj];
         mapping.req = req; // getOne and putOne requires req object
         queries[mapping] = new Query(mapping, self.lastRun);
-        executeTasks.push(queries[mapping].execute);
-        mapTasks.push(queries[mapping].map);
-        saveTasks.push(queries[mapping].save);
-        joinTasks.push(queries[mapping].join);
       });
       async.series({
           execute: function (callback) {
-            async.parallel(executeTasks, function () {
+            async.parallel(_.pluck(queries, 'execute'), function () {
               callback();
             });
           },
           map: function (callback) {
-            async.parallel(mapTasks, function () {
+            async.parallel(_.pluck(queries, 'map'), function () {
               callback();
             });
           },
           save: function (callback) {
-            async.parallel(saveTasks, function () {
+            async.parallel(_.pluck(queries, 'save'), function () {
               callback();
             });
           },
           join: function (callback) {
-            async.parallel(joinTasks, function () {
+            async.parallel(_.pluck(queries, 'join'), function () {
               callback();
             });
           }
@@ -87,15 +90,13 @@ function Construct (options, callback) {
           self.lastRun = startTime;
           self._apos.db.collection('aposSalesforceStash', function (err, collection) {
             collection.insert({lastRun: self.lastRun, finished: new Date()}, function(err, result) {
-              console.log("done syncing");
+              return callback();
             });
           });
         }
       );
     })
-
-    res.redirect('/');
-  });
+  }
 
   function getConnection (callback) {
     if (!connection) {
@@ -274,6 +275,13 @@ function Construct (options, callback) {
     var result = self.render('menu', args);
     return result;
   });
+
+  self._apos.tasks.salesforceSync = function(callback) {
+    self.sync({}, function() {
+      console.log("Salesforce Sync is finshed.");
+      return callback(null);
+    });
+  }
   
   // Ensure index on Salesforce id in Apostrophe
   self._apos.pages.ensureIndex({ sfId: 1 }, { safe: true }, function() {

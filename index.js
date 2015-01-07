@@ -276,7 +276,7 @@ function Construct (options, callback) {
   });
 
   self._apos.tasks.salesforceSync = function(callback) {
-    self.sync({}, function() {
+    self.sync(self._apos.getTaskReq(), function() {
       console.log("Salesforce Sync is finshed.");
       return callback(null);
     });

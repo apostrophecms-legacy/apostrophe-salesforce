@@ -26,7 +26,9 @@ function Construct (options, callback) {
   // Salesforce authentication stuffs
   self.sfUsername = options.sfUsername;
   self.sfPassword = options.sfPassword;
-  
+  // Append security token to password, as Salesforce requires
+  self.sfPassword += options.sfSecurityToken || "";
+
   self._apos.db.collection('aposSalesforce', function (err, collection) {
     collection.findOne({}, {sort: [['$natural','desc']]}, function(err, doc) {
       if (!doc) return
@@ -47,7 +49,8 @@ function Construct (options, callback) {
     getConnection(function(err) {
       if (err) return console.log(err);
 
-      // connection.sobject("Contact").describe(function(err, res) {
+      // Leaving this in as a handy way to get a salesforce schema
+      // connection.sobject("Project_Volunteer__c").describe(function(err, res) {
       //   console.log(res);
       // })
       // return
@@ -138,7 +141,7 @@ function Construct (options, callback) {
     // Add nested queries for JOINs
     for(aposJoin in mapping.joins) {
       var join = mapping.joins[aposJoin];
-      queryFields.push('(SELECT Entity' + (join.sfSubType ? '.' + join.sfSubType : '') + '.Id FROM ' + join.sfType + ' AS Entity)');
+      queryFields.push('(SELECT Entity.Id FROM ' + join.sfType + ' AS Entity)');
     }
     // Add custom WHERE clauses
     if (mapping.where) {
@@ -243,7 +246,7 @@ function Construct (options, callback) {
               if (!joinResults) return callback(err);
                 async.each(joinResults, 
                   function(joinResult, callback) {
-                  options.site.modules[join.aposType].getOne(req, {sfId: joinResult[join.sfSubType].Id}, {}, function(err, item) {
+                  options.site.modules[join.aposType].getOne(req, {sfId: joinResult.Id}, {}, function(err, item) {
                     if(!item) return callback(err);
                     //console.log(sfObj.Name + "---" + (item ? item.title + " " + item._id : "none"));
                     if (!_.contains(aposObj[aposJoin], item._id)) {

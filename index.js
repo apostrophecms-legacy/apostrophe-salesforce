@@ -115,7 +115,7 @@ function Construct (options, callback) {
     var Type = mapping.Type;
     var req = mapping.req;
 
-    var MAX_RESULTS = 10000;
+    var MAX_RESULTS = 20000;
 
     // Construct the SOQL Query
     var queryFields = [];
@@ -125,7 +125,7 @@ function Construct (options, callback) {
       whereClauses.push("LastModifiedDate > " + lastRun);
     }
     // Add fields to SELECT
-    for(aposField in mapping.fields) {
+    for(var aposField in mapping.fields) {
       var sfFields = mapping.fields[aposField];
       if(!(sfFields instanceof Array)) {
         sfFields = [sfFields];
@@ -139,9 +139,13 @@ function Construct (options, callback) {
       }
     }
     // Add nested queries for JOINs
-    for(aposJoin in mapping.joins) {
+    for(var aposJoin in mapping.joins) {
       var join = mapping.joins[aposJoin];
-      queryFields.push('(SELECT Entity.Id FROM ' + join.sfType + ' AS Entity)');
+      if (join.hasMany) {
+        queryFields.push('(SELECT Entity.Id FROM ' + join.sfType + ' AS Entity)');
+      } else {
+        queryFields.push(join.sfType + '.Id');
+      }
     }
     // Add custom WHERE clauses
     if (mapping.where) {
@@ -158,7 +162,6 @@ function Construct (options, callback) {
 
     // Executes the constructed query
     self.execute = function(callback) {
-      console.log("execute---" + self.queryString);
       connection.query(self.queryString)
         .on("record", function(sfObj) {
           sfObj = flatten(sfObj, {safe: true});
@@ -180,7 +183,7 @@ function Construct (options, callback) {
         var aposObj = Type.newInstance();
         aposObj.sfId = sfObj.Id;
         // Add fields to Apostrophe object according to mapping configuration
-        for(aposField in mapping.fields) {
+        for(var aposField in mapping.fields) {
           var sfFields = mapping.fields[aposField];
           if(!(sfFields instanceof Array)) {
             sfFields = [sfFields];
@@ -236,19 +239,19 @@ function Construct (options, callback) {
         function(sfObj, callback) {
           Type.getOne(req, {sfId: sfObj.Id}, {}, function(err, aposObj) {
             if(!aposObj) return callback();
-            if(!aposObj[aposJoin]) {
-              aposObj[aposJoin] = [];
-            }
-            for(aposJoin in mapping.joins) {
+            for(var aposJoin in mapping.joins) {
               var join = mapping.joins[aposJoin];
-              var joinResults = sfObj[join.sfType + '.records'];
-
-              if (!joinResults) return callback(err);
+              if (join.hasMany) {
+                var joinResults = sfObj[join.sfType + '.records'];
+                if (!joinResults) return callback(err);
                 async.each(joinResults, 
                   function(joinResult, callback) {
                   options.site.modules[join.aposType].getOne(req, {sfId: joinResult.Id}, {}, function(err, item) {
                     if(!item) return callback(err);
                     //console.log(sfObj.Name + "---" + (item ? item.title + " " + item._id : "none"));
+                    if(!aposObj[aposJoin]) {
+                      aposObj[aposJoin] = [];
+                    }
                     if (!_.contains(aposObj[aposJoin], item._id)) {
                       aposObj[aposJoin].push(item._id);
                     }
@@ -260,8 +263,18 @@ function Construct (options, callback) {
                   Type.putOne(req, {}, aposObj, function(err) {
                     return callback(err);
                   });
-                }
-              );
+                });
+              } else {
+                var sfObjId = sfObj[join.sfType + ".Id"];
+                options.site.modules[join.aposType].getOne(req, {sfId: sfObjId}, {}, function(err, item) {
+                  if(!item) return callback(err);
+                  //console.log(sfObj.Name + "---" + (item ? item.title + " " + item._id : "none"));
+                  aposObj[aposJoin] = item._id;
+                  Type.putOne(req, {}, aposObj, function(err) {
+                    return callback(err);
+                  });
+                });
+              }
             }
           });
         }, function(err) {

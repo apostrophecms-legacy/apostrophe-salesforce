@@ -115,7 +115,7 @@ function Construct (options, callback) {
     var Type = mapping.Type;
     var req = mapping.req;
 
-    var MAX_RESULTS = 20000;
+    var MAX_RESULTS = 20;
 
     // Construct the SOQL Query
     var queryFields = [];
@@ -199,8 +199,24 @@ function Construct (options, callback) {
           if(sfFieldValues.length > 0) {
             aposObj[aposField] = sfFieldValues.join(' ');
           }
-          self.aposResults.push(aposObj);
         }
+        for(var aposArray in mapping.arrays) {
+          var sfFields = mapping.arrays[aposArray];
+          if(!(sfFields instanceof Array)) {
+            sfFields = [sfFields];
+          }
+          var sfFieldValues = [];
+          sfFields.forEach(function(sfField) {
+            var sfValue = sfObj[sfField];
+            if(typeof sfValue !== 'undefined' && sfValue !== null) {
+              sfFieldValues.push(sfValue);
+            }
+          });
+          if(sfFieldValues.length > 0) {
+            aposObj[aposArray] = sfFieldValues;
+          }
+        }
+        self.aposResults.push(aposObj);
       });
       callback();
     }
@@ -248,7 +264,6 @@ function Construct (options, callback) {
                   function(joinResult, callback) {
                   options.site.modules[join.aposType].getOne(req, {sfId: joinResult.Id}, {}, function(err, item) {
                     if(!item) return callback(err);
-                    //console.log(sfObj.Name + "---" + (item ? item.title + " " + item._id : "none"));
                     if(!aposObj[aposJoin]) {
                       aposObj[aposJoin] = [];
                     }
@@ -259,7 +274,6 @@ function Construct (options, callback) {
                   });
                 },
                 function(err) {
-                  //console.log(aposObj);
                   Type.putOne(req, {}, aposObj, function(err) {
                     return callback(err);
                   });
@@ -268,7 +282,6 @@ function Construct (options, callback) {
                 var sfObjId = sfObj[join.sfType + ".Id"];
                 options.site.modules[join.aposType].getOne(req, {sfId: sfObjId}, {}, function(err, item) {
                   if(!item) return callback(err);
-                  //console.log(sfObj.Name + "---" + (item ? item.title + " " + item._id : "none"));
                   aposObj[aposJoin] = item._id;
                   Type.putOne(req, {}, aposObj, function(err) {
                     return callback(err);

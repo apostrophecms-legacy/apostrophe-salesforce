@@ -115,7 +115,7 @@ function Construct (options, callback) {
     var Type = mapping.Type;
     var req = mapping.req;
 
-    var MAX_RESULTS = 20;
+    var MAX_RESULTS = 20000;
 
     // Construct the SOQL Query
     var queryFields = [];

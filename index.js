@@ -23,12 +23,6 @@ function Construct (options, callback) {
   // The configuration of how Salesforce data maps into Apostrophe
   self.mappings = options.mappings;
 
-  // Salesforce authentication stuffs
-  self.sfUsername = options.sfUsername;
-  self.sfPassword = options.sfPassword;
-  // Append security token to password, as Salesforce requires
-  self.sfPassword += options.sfSecurityToken || "";
-
   self._apos.db.collection('aposSalesforce', function (err, collection) {
     collection.findOne({}, {sort: [['$natural','desc']]}, function(err, doc) {
       if (!doc) return
@@ -43,6 +37,19 @@ function Construct (options, callback) {
     res.redirect('/');
   });
 
+  // Salesforce authentication stuffs
+  self.getUsername = function(options, callback) {
+    callback(options.sfUsername);
+  }
+
+  self.getPassword = function(options, callback) {
+    callback(options.sfPassword);
+  }
+
+  self.getSecurityToken = function(options, callback) {
+    callback(options.sfSecurityToken);
+  }
+
   self.sync = function(req, callback) {
     var startTime = moment().format();
 
@@ -50,10 +57,10 @@ function Construct (options, callback) {
       if (err) return console.log(err);
 
       // Leaving this in as a handy way to get a salesforce schema
-      // connection.sobject("Project_Volunteer__c").describe(function(err, res) {
+      // connection.sobject("Contact").describe(function(err, res) {
       //   console.log(res);
-      // })
-      // return
+      // });
+      // return callback()
 
       var queries = [];
 
@@ -99,14 +106,33 @@ function Construct (options, callback) {
   }
 
   function getConnection (callback) {
-    if (!connection) {
+    connection = null;
+    async.series({
+      getUsername: function(callback) {
+        self.getUsername(options, function(username) {
+          self.sfUsername = username;
+          callback();
+        });
+      },
+      getPassword: function(callback) {
+        self.getPassword(options, function(password) {
+          self.sfPassword = password;
+          callback();
+        });
+      },
+      getSecurityToken: function(callback) {
+        // Append security token to password, as Salesforce requires
+        self.getSecurityToken(options, function(token) {
+          self.sfPassword += token || "";
+          callback();
+        });
+      }
+    }, function() {
       connection = new jsforce.Connection({});
       connection.login(self.sfUsername, self.sfPassword, function(err, userInfo) {
         return callback(err, connection);
       });
-    } else {
-      return callback(null, connection);
-    }
+    }); 
   }
 
   var Query = function (mapping, lastRun) {
@@ -171,6 +197,7 @@ function Construct (options, callback) {
           callback();
         })
         .on("error", function(err) {
+          console.log(err);
           callback(err);
         })
         .run({autoFetch: true, maxFetch: MAX_RESULTS});

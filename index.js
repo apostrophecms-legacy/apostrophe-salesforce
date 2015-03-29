@@ -207,7 +207,7 @@ function Construct (options, callback) {
     self.map = function(callback) {
       self.sfResults.forEach(function(sfObj) {
         // Create new instance of object and associate with Salesforce id
-        var aposObj = Type.newInstance();
+        var aposObj = {};
         aposObj.sfId = sfObj.Id;
         // Add fields to Apostrophe object according to mapping configuration
         for(var aposField in mapping.fields) {
@@ -255,11 +255,11 @@ function Construct (options, callback) {
         function(aposObj, callback) {
           Type.getOne(req, {sfId: aposObj.sfId}, {}, function(err, item) {
             if(err) return callback(err);
+
             if(!item) {
-              item = aposObj;
-            } else {
-              _.extend(item, aposObj);
+              item = Type.newInstance();
             }
+            item = _.extend(item, aposObj);
             //console.log(item.sfId + " -+- " + item.title);
             // Save the Apostrophe object
             Type.putOne(req, {}, item, function(err) {

@@ -19,6 +19,7 @@ function Construct (options, callback) {
   self._app = options.app;
   self._apos = options.apos;
   self._site = options.site;
+  self.progress = self._apos.getCache('apostrophe-salesforce-progress');
 
   // The configuration of how Salesforce data maps into Apostrophe
   self.mappings = options.mappings;
@@ -31,10 +32,34 @@ function Construct (options, callback) {
   });
 
   self._app.get("/apos/salesforce/sync", function(req, res) {
-    self.sync(req, function() {
-      console.log("done syncing");
+    req.jobId = self._apos.generateId();
+    return self.progress.set(req.jobId, { finished: false, error: false }, function(err) {
+      res.redirect('/apos/salesforce/progress?jobId=' + req.jobId);
+      // Deliberately continuing after res.redirect
+      if (!err) {
+        self.sync(req, req.query, function(err) {
+          if (err) {
+            self.progress.set(req.jobId, { finished: true, error: true }, function() {});
+          } else {
+            self.progress.set(req.jobId, { finished: true, error: false }, function() {});
+          }
+        });
+      }
     });
-    res.redirect('/');
+  });
+
+  self._app.get("/apos/salesforce/progress", function(req, res) {
+    var jobId = req.query.jobId;
+    return self.progress.get(jobId, function(err, obj) {
+      if (err || (!obj)) {
+        return respond({ error: true });
+      } else {
+        return respond(obj);
+      }
+    });
+    function respond(obj) {
+      return res.send(self.renderPage(req, 'progress', obj));
+    }
   });
 
   // Salesforce authentication stuffs
@@ -50,7 +75,13 @@ function Construct (options, callback) {
     callback(options.sfSecurityToken);
   }
 
-  self.sync = function(req, callback) {
+  // If options.resync is true, re-syncs everything, not just things modified
+  // since the last run. Useful if the mappings have changed
+  self.sync = function(req, options, callback) {
+    if (!callback) {
+      callback = options;
+      options = {};
+    }
     var startTime = moment().format();
 
     getConnection(function(err) {
@@ -68,36 +99,38 @@ function Construct (options, callback) {
       self.mappings.forEach(function(mapping) {
         mapping.Type = self._site.modules[mapping.aposObj];
         mapping.req = req; // getOne and putOne requires req object
-        queries.push(new Query(mapping, self.lastRun));
+        var lastRun;
+        if (options.resync) {
+          lastRun = undefined;
+        } else {
+          lastRun = self.lastRun;
+        }
+        queries.push(new Query(mapping, lastRun));
       });
-      async.series({
+      return async.series({
           execute: function (callback) {
-            async.parallel(_.pluck(queries, 'execute'), function () {
-              callback();
-            });
+            return async.parallel(_.pluck(queries, 'execute'), callback);
           },
           map: function (callback) {
-            async.parallel(_.pluck(queries, 'map'), function () {
-              callback();
-            });
+            return async.parallel(_.pluck(queries, 'map'), callback);
           },
           save: function (callback) {
-            async.parallel(_.pluck(queries, 'save'), function () {
-              callback();
-            });
+            return async.parallel(_.pluck(queries, 'save'), callback);
           },
           join: function (callback) {
-            async.parallel(_.pluck(queries, 'join'), function () {
-              callback();
-            });
+            return async.parallel(_.pluck(queries, 'join'), callback);
           }
         }, 
-        function() {
+        function(err) {
+          if (err) {
+            return callback(err);
+          }
           self.lastRun = startTime;
           console.log("Finished sync, logging last run");
           self._apos.db.collection('aposSalesforce', function (err, collection) {
             collection.insert({lastRun: self.lastRun, finished: new Date()}, function(err, result) {
-              return callback();
+              // Failure to insert lastRun is not an error
+              return callback(null);
             });
           });
         }
@@ -147,7 +180,7 @@ function Construct (options, callback) {
     var queryFields = [];
     var whereClauses = [];
     // Add delta logic
-    if(lastRun) {
+    if (lastRun) {
       whereClauses.push("LastModifiedDate > " + lastRun);
     }
     // Add fields to SELECT
@@ -251,7 +284,9 @@ function Construct (options, callback) {
     // De-dups and saves the apostrophe objects
     self.save = function(callback) {
       // De-duping step
-      async.each(self.aposResults, 
+      // A reasonable amount of parallelism only, so we don't kill the site while
+      // this is going on. -Tom
+      async.eachLimit(self.aposResults, 3,
         function(aposObj, callback) {
           Type.getOne(req, {sfId: aposObj.sfId}, {}, function(err, item) {
             if(err) return callback(err);
@@ -278,7 +313,9 @@ function Construct (options, callback) {
       if (!mapping.joins || mapping.joins.length <= 0) {
         return callback();
       }
-      async.each(self.sfResults,
+      // A reasonable amount of parallelism only, so we don't kill the site while
+      // this is going on. -Tom
+      return async.eachLimit(self.sfResults, 3,
         function(sfObj, callback) {
           Type.getOne(req, {sfId: sfObj.Id}, {}, function(err, aposObj) {
             if(!aposObj) return callback();
@@ -287,7 +324,8 @@ function Construct (options, callback) {
               if (join.hasMany) {
                 var joinResults = sfObj[join.sfType + '.records'];
                 if (!joinResults) return callback(err);
-                async.each(joinResults, 
+                // We're parallel enough at this point
+                return async.eachSeries(joinResults, 
                   function(joinResult, callback) {
                   options.site.modules[join.aposType].getOne(req, {sfId: joinResult.Id}, {}, function(err, item) {
                     if(!item) return callback(err);

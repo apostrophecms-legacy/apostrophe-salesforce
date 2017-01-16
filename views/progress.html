@@ -1,0 +1,21 @@
+{% extends "layout.html" %}
+
+{% block extraHead %}
+  {% if not finished %}
+    <meta http-equiv="refresh" content="5" />
+  {% endif %}
+{% endblock %}
+
+{% block main %}
+  <h2>Salesforce Sync</h2>
+  {% if error %}
+    <h3>An error occurred. Sync was not successful.</h3>
+    <p>Please try again later.</p>
+  {% elif not finished %}
+    <h3>The sync is still in progress.</h3>
+    <p>Please do not close this window. It will update automatically.</p>
+  {% else %}
+    <h3>Finished!</h3>
+    <p>Your sync is complete.</p>
+  {% endif %}
+{% endblock %}

@@ -230,7 +230,6 @@ function Construct (options, callback) {
           callback();
         })
         .on("error", function(err) {
-          console.log(err);
           callback(err);
         })
         .run({autoFetch: true, maxFetch: MAX_RESULTS});
@@ -369,12 +368,13 @@ function Construct (options, callback) {
     return result;
   });
 
-  self._apos.tasks.salesforceSync = function(callback) {
-    self.sync(self._apos.getTaskReq(), function() {
-      console.log("Salesforce Sync is finshed.");
-      return callback(null);
-    });
-  }
+  self._apos.on('tasks:register', function(taskGroups) {
+    taskGroups.apostrophe.salesforceSync = function(apos, argv, callback) {
+      return self.sync(self._apos.getTaskReq(), {
+        resync: argv.resync
+      }, callback);
+    };
+  });
   
   // Ensure index on Salesforce id in Apostrophe
   self._apos.pages.ensureIndex({ sfId: 1 }, { safe: true }, function() {

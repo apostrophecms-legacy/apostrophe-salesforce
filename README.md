@@ -30,6 +30,16 @@ There is a very basic progress display page. It refreshes every 5 seconds.
 
 If the progress page seems empty to you, your nunjucks block names are probably not the same as ours. Just override the `progress.html` template of this module at project level.
 
+## Command line
+
+You can also sync at the command line:
+
+```
+node app apostrophe:salesforce [--resync]
+```
+
 ## Changelog
+
+0.1.1: Resync option on the command line.
 
 0.1.0: Progress display and resync option added. Async code cleaned up and parallelism reduced to levels that don't starve CPU and I/O for the site.

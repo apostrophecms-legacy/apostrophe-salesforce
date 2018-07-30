@@ -338,7 +338,7 @@ function Construct (options, callback) {
                   });
                 },
                 function(err) {
-                  Type.putOne(req, {}, aposObj, function(err) {
+                  Type.putOne(req, { version: false }, aposObj, function(err) {
                     return callback(err);
                   });
                 });
@@ -347,7 +347,7 @@ function Construct (options, callback) {
                 options.site.modules[join.aposType].getOne(req, {sfId: sfObjId}, {}, function(err, item) {
                   if(!item) return callback(err);
                   aposObj[aposJoin] = item._id;
-                  Type.putOne(req, {}, aposObj, function(err) {
+                  Type.putOne(req, { version: false }, aposObj, function(err) {
                     return callback(err);
                   });
                 });

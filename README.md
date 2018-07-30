@@ -40,6 +40,8 @@ node app apostrophe:salesforce [--resync]
 
 ## Changelog
 
+0.1.2: `version: false` to prevent massive proliferation of versions in the database on every salesforce sync.
+
 0.1.1: Resync option on the command line.
 
 0.1.0: Progress display and resync option added. Async code cleaned up and parallelism reduced to levels that don't starve CPU and I/O for the site.

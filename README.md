@@ -1,3 +1,7 @@
+# ⛔️ **DEPRECATED** — do not use for new projects
+
+See [our current docs](https://docs.apostrophecms.org/)
+
 # apostrophe-salesforce
 
 This is for Apostrophe 0.5. It has not yet been ported to 2.x. Feel free to port it.
